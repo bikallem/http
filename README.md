@@ -2,7 +2,7 @@
 A HTTP 1.1 server possibly for use with tezos-node
 
 # Goals/Considerations
-- Utilize all cores/CPUs (exploit OCaml 5.0 features - specifically `Domains` and `effects`).
+- Utilize all cores/CPUs by exploiting OCaml 5.0 features - specifically `Domains` and `effects`.
 - Prefer direct style api vs monadic api.
 - Easy experimentation with various threading models - such as domainslib, eio or some other new mechanisms.
 - Compatibility with lwt/async is a non-goal.
