@@ -1,4 +1,4 @@
-# tez-http
+# http
 A HTTP 1.1 server possibly for use with tezos-node
 
 # Goals/Considerations
