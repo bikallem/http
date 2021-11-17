@@ -16,4 +16,7 @@
  (depends
   (ocaml
    (>= 4.12+domains))
-  angstrom))
+  fmt
+  angstrom
+  domainslib
+  extunix))

@@ -27,8 +27,8 @@ val target : request -> string
 val http_version : request -> int * int
 val headers : request -> header list
 val client_addr : request -> Unix.sockaddr
-val content_length : request -> int option
-val body : request -> bytes
+val content_length : request -> int
+val body : request -> Cstruct.t
 
 (** {1 Pretty Printers} *)
 

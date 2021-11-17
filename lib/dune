@@ -1,4 +1,4 @@
 (library
  (name http)
  (public_name http)
- (libraries fmt angstrom domainslib))
+ (libraries fmt angstrom domainslib extunix))
