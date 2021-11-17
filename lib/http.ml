@@ -1,5 +1,4 @@
 open Domainslib
-module Smap = Map.Make (String)
 
 type request = {
   method' : method';
