@@ -1,5 +1,5 @@
 # http
-A HTTP 1.1 server possibly for use with tezos-node
+A HTTP 1.1 server with support for mulitple cores and parallel request processing.
 
 # Goals/Considerations
 - Utilize all cores/CPUs by exploiting OCaml 5.0 features - specifically `Domains` and `effects`.
