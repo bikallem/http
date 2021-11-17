@@ -9,6 +9,7 @@ let start ?(domains = 1) ~port connection_handler =
   let listen_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
   let server_sock = Unix.(socket PF_INET SOCK_STREAM 0) in
   Unix.setsockopt server_sock Unix.SO_REUSEADDR true;
+  Unix.setsockopt server_sock Unix.SO_REUSEPORT true;
   Unix.bind server_sock listen_address;
   Unix.listen server_sock 100;
   while true do
