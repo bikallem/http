@@ -107,8 +107,8 @@ let crlf = string_ci "\r\n" <?> "[crlf]"
 (*-- https://datatracker.ietf.org/doc/html/rfc7230#section-3.2 --*)
 let header_fields =
   let header_field =
-    let* field_name = token <* char ':' <* ows >>| String.lowercase_ascii in
-    let+ field_value =
+    let* header_name = token <* char ':' <* ows >>| String.lowercase_ascii in
+    let+ header_value =
       let field_content =
         let c2 =
           optional
@@ -122,7 +122,7 @@ let header_fields =
       in
       many field_content >>| String.concat "" <* crlf <* commit
     in
-    (field_name, field_value)
+    (header_name, header_value)
   in
   many header_field
 
