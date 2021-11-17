@@ -3,7 +3,7 @@ A HTTP 1.1 server with support for mulitple cores and parallel request processin
 
 # Goals/Considerations
 - Utilize all cores/CPUs by exploiting OCaml 5.0 features - specifically `Domains` and `effects`.
-- Prefer direct style api vs monadic api.
+- Prefer direct style api over monadic api.
 - Easy experimentation with various threading models - such as domainslib, eio or some other new mechanisms.
 - Compatibility with lwt/async is a non-goal.
 - Able to be used as a HTTP server in resto (https://gitlab.com/nomadic-labs/resto)

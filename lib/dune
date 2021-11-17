@@ -1,4 +1,4 @@
 (library
  (name http)
  (public_name http)
- (libraries angstrom))
+ (libraries angstrom domainslib))
