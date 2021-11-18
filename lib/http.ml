@@ -7,7 +7,7 @@ type request = {
   content_length : int;
   headers : (string * string) list;
   client_addr : Unix.sockaddr;
-  fd : Unix.file_descr;
+  client_fd : Unix.file_descr;
   mutable body : Cstruct.t;
   mutable unconsumed : Cstruct.t;
       (* unconsumed - bytes remaining after request is processed *)
@@ -26,7 +26,21 @@ and method' =
 
 and header = string * string
 
-and response
+module Smap = Map.Make (String)
+
+type response = {
+  response_code : response_code;
+  headers : header list;
+  (* ; cookies: Http_cookie.t Smap.t *)
+  body : Cstruct.t;
+}
+
+and response_code = int * string
+(* code, reason phrase *)
+
+and handler = request -> response
+
+and middleware = handler -> handler
 
 exception Request_error of string
 
@@ -156,25 +170,103 @@ let io_buffer_size = 65536 (* UNIX_BUFFER_SIZE 4.0.0 in bytes *)
 let request_error fmt =
   Format.ksprintf (fun err -> raise (Request_error err)) fmt
 
-let read_body request =
-  let content_length = content_length request in
-  let unconsumed_length = Cstruct.length request.unconsumed in
-  if content_length = 0 then Cstruct.empty
-  else if content_length = unconsumed_length then request.unconsumed
-  else if content_length < unconsumed_length then (
-    let sz = unconsumed_length - content_length in
-    let buf = Cstruct.(sub request.unconsumed 0 content_length) in
-    let unconsumed = Cstruct.sub request.unconsumed content_length sz in
-    request.unconsumed <- unconsumed;
-    buf)
-  else
-    let sz = content_length - unconsumed_length in
-    let buf = Cstruct.create sz in
-    let sz' = ExtUnix.All.BA.read request.fd buf.buffer in
-    let buf = if sz' <> sz then Cstruct.sub buf 0 sz' else buf in
-    if unconsumed_length > 0 then Cstruct.append request.unconsumed buf else buf
+(* Response *)
+let response_code ?(reason_phrase = "unknown") = function
+  (* Informational *)
+  | 100 -> (100, "Continue")
+  | 101 -> (101, "Switching Protocols")
+  (* Successful *)
+  | 200 -> (200, "OK")
+  | 201 -> (201, "Created")
+  | 202 -> (202, "Accepted")
+  | 203 -> (203, "Non-Authoritative Information")
+  | 204 -> (204, "No Content")
+  | 205 -> (205, "Reset Content")
+  | 206 -> (206, "Partial Content")
+  (* Redirection *)
+  | 300 -> (300, "Multiple Choices")
+  | 301 -> (301, "Moved Permanently")
+  | 302 -> (302, "Found")
+  | 303 -> (303, "See Other")
+  | 304 -> (304, "Not Modified")
+  | 305 -> (305, "Use Proxy")
+  | 306 -> (306, "Temporary Redirect")
+  (* Client error *)
+  | 400 -> (400, "Bad Request")
+  | 401 -> (401, "Unauthorized")
+  | 402 -> (402, "Payment Required")
+  | 403 -> (403, "Forbidden")
+  | 404 -> (404, "Not Found")
+  | 405 -> (405, "Method Not Allowed")
+  | 406 -> (406, "Not Acceptable")
+  | 407 -> (407, "Proxy Authentication Required")
+  | 408 -> (408, "Request Timeout")
+  | 409 -> (409, "Conflict")
+  | 410 -> (410, "Gone")
+  | 411 -> (411, "Length Required")
+  | 412 -> (412, "Precondition Failed")
+  | 413 -> (413, "Payload Too Large")
+  | 414 -> (414, "URI Too Long")
+  | 415 -> (415, "Unsupported Media Type")
+  | 416 -> (416, "Range Not Satisfiable")
+  | 417 -> (417, "Expectation Failed")
+  | 418 -> (418, "I'm a teapot") (* RFC 2342 *)
+  | 420 -> (420, "Enhance Your Calm")
+  | 426 -> (426, "Upgrade Required")
+  (* Server error *)
+  | 500 -> (500, "Internal Server Error")
+  | 501 -> (501, "Not Implemented")
+  | 502 -> (502, "Bad Gateway")
+  | 503 -> (503, "Service Unavailable")
+  | 504 -> (504, "Gateway Timeout")
+  | 505 -> (505, "HTTP Version Not Supported")
+  | c ->
+      if c < 0 then failwith (Printf.sprintf "code: %d is negative" c)
+      else if c < 100 || c > 999 then
+        failwith (Printf.sprintf "code: %d is not a three-digit number" c)
+      else (c, reason_phrase)
 
-let request fd unconsumed client_addr =
+let code_int : response_code -> int = fun (code, _) -> code
+let code_reason_phrase (_, phrase) = phrase
+let ok = response_code 200
+let internal_server_error = response_code 500
+let bad_request = response_code 400
+
+let response_bigstring ?(response_code = ok) ?(headers = []) body =
+  {
+    response_code;
+    headers =
+      List.map
+        (fun (name, value) -> (String.lowercase_ascii name, value))
+        headers
+      (* ; cookies= Smap.empty *);
+    body = Cstruct.of_bigarray body;
+  }
+
+let response ?response_code ?headers body =
+  response_bigstring ?response_code ?headers
+    (Bigstringaf.of_string body ~off:0 ~len:(String.length body))
+
+let request (client_addr, client_fd) unconsumed =
+  let read_body request =
+    let content_length = content_length request in
+    let unconsumed_length = Cstruct.length request.unconsumed in
+    if content_length = 0 then Cstruct.empty
+    else if content_length = unconsumed_length then request.unconsumed
+    else if content_length < unconsumed_length then (
+      let sz = unconsumed_length - content_length in
+      let buf = Cstruct.(sub request.unconsumed 0 content_length) in
+      let unconsumed = Cstruct.sub request.unconsumed content_length sz in
+      request.unconsumed <- unconsumed;
+      buf)
+    else
+      let sz = content_length - unconsumed_length in
+      let buf = Cstruct.create sz in
+      let sz' = ExtUnix.All.BA.read request.client_fd buf.buffer in
+      let buf = if sz' <> sz then Cstruct.sub buf 0 sz' else buf in
+      if unconsumed_length > 0 then Cstruct.append request.unconsumed buf
+      else buf
+  in
   let request_or_eof =
     let request' =
       (let* method', target, http_version = request_line in
@@ -194,7 +286,7 @@ let request fd unconsumed client_addr =
            content_length;
            headers;
            client_addr;
-           fd;
+           client_fd;
            body = Cstruct.empty;
            unconsumed;
          }
@@ -210,7 +302,7 @@ let request fd unconsumed client_addr =
         let unconsumed_length = Cstruct.length unconsumed in
         let len = io_buffer_size - unconsumed_length in
         let buf = Cstruct.create len in
-        let len' = ExtUnix.All.BA.read fd buf.buffer in
+        let len' = ExtUnix.All.BA.read client_fd buf.buffer in
         if len' = 0 then parse_request (k `Eof)
         else
           let buf = if len' != len then Cstruct.sub buf 0 len' else buf in
@@ -235,7 +327,36 @@ let request fd unconsumed client_addr =
   in
   parse_request (Buffered.parse request_or_eof)
 
-let handle_client_connection (_client_sock, _client_addr) _request_handler = ()
+let write_response _client_fd _response = ()
+
+let handle_client_connection (client_addr, client_fd) request_handler =
+  let handle_request (req : request) =
+    try
+      let response = request_handler req in
+      write_response client_fd response;
+      `Next_request
+    with exn ->
+      (match exn with
+      | Request_error _error ->
+          write_response client_fd (response ~response_code:bad_request "")
+      | _exn ->
+          write_response client_fd
+            (response ~response_code:internal_server_error ""));
+      `Close_connection
+  in
+  let rec loop_requests unconsumed =
+    let request = request (client_addr, client_fd) unconsumed in
+    match request with
+    | `Request req -> (
+        match handle_request req with
+        | `Close_connection -> Unix.close client_fd
+        | `Next_request -> loop_requests req.unconsumed)
+    | `Connection_closed -> Unix.close client_fd
+    | `Error _e ->
+        write_response client_fd (response ~response_code:bad_request "");
+        Unix.close client_fd
+  in
+  loop_requests Cstruct.empty
 
 let rec accept_non_intr s =
   try Unix.accept ~cloexec:true s
@@ -250,8 +371,8 @@ let start ?(domains = 1) ~port request_handler =
   Unix.bind server_sock listen_address;
   Unix.listen server_sock 100;
   while true do
-    let client_sock, client_addr = accept_non_intr server_sock in
+    let fd, client_addr = accept_non_intr server_sock in
     ignore
     @@ Task.async task_pool (fun () ->
-           handle_client_connection (client_sock, client_addr) request_handler)
+           handle_client_connection (client_addr, fd) request_handler)
   done
