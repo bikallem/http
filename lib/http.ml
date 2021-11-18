@@ -331,18 +331,18 @@ let write_response _client_fd _response = ()
 
 let handle_client_connection (client_addr, client_fd) request_handler =
   let handle_request (req : request) =
-    try
-      let response = request_handler req in
-      write_response client_fd response;
-      `Next_request
-    with exn ->
-      (match exn with
-      | Request_error _error ->
-          write_response client_fd (response ~response_code:bad_request "")
-      | _exn ->
-          write_response client_fd
-            (response ~response_code:internal_server_error ""));
-      `Close_connection
+    match request_handler req with
+    | response ->
+        write_response client_fd response;
+        `Next_request
+    | exception exn ->
+        (match exn with
+        | Request_error _error ->
+            write_response client_fd (response ~response_code:bad_request "")
+        | _exn ->
+            write_response client_fd
+              (response ~response_code:internal_server_error ""));
+        `Close_connection
   in
   let rec loop_requests unconsumed =
     let request = request (client_addr, client_fd) unconsumed in
