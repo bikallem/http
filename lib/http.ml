@@ -349,7 +349,7 @@ let handle_client_connection (client_addr, client_fd) request_handler =
     | `Request request -> (
         match handle_request request with
         | `Close_connection -> Unix.close client_fd
-        | `Next_request -> loop_requests request.unconsumed)
+        | `Next_request -> (loop_requests [@tailcall]) request.unconsumed)
     | `Connection_closed -> Unix.close client_fd
     | `Error _e ->
         write_response client_fd (response ~response_code:bad_request "");
