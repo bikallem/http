@@ -248,6 +248,18 @@ let response ?(response_code = ok) ?(headers = []) body =
     body = Bytes.unsafe_of_string body;
   }
 
+let text body =
+  response ~response_code:ok
+    ~headers:[ ("content-type", "text/plain; charset=UTF-8") ]
+    body
+
+let html body =
+  response ~response_code:ok
+    ~headers:[ ("content-type", "text/html; charset=UTF-8") ]
+    body
+
+(* Request *)
+
 let request (client_addr, client_fd) unconsumed =
   let read_body request =
     let content_length = content_length request in

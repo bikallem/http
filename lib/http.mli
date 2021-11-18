@@ -81,15 +81,13 @@ val response :
 (** [response ~response_code ~headers body] returns a {!type:response}. The
     default value for [response_code] is [200]. *)
 
-(* val text : string -> response Lwt.t *)
+val text : string -> response
 (** [text body] creates a response with HTTP status 200 and content-type of
     ["text/plain; charset=utf-8"]. *)
 
-(* val html : string -> response Lwt.t *)
+val html : string -> response
 (** [text body] creates a response with HTTP status 200 and content-type of
     ["text/html; charset=UTF-8"]. *)
-
-(* val tyxml : Tyxml.Html.doc -> response Lwt.t *)
 
 val start : ?domains:int -> port:int -> handler -> unit
 (** [start ?domains ~port connection_handler] starts HTTP/1.1 server on [port].
