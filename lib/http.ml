@@ -8,6 +8,7 @@ type request = {
   headers : (string * string) list;
   client_addr : Unix.sockaddr;
   client_fd : Unix.file_descr;
+  cookies : Http_cookie.t list Lazy.t;
   mutable body : Cstruct.t;
   mutable unconsumed : Cstruct.t;
       (* unconsumed - bytes remaining after request is processed *)
@@ -53,6 +54,10 @@ let headers (request : request) = request.headers
 let client_addr request = request.client_addr
 let content_length request = request.content_length
 let body (request : request) = request.body
+
+let cookies (request : request) =
+  Lazy.force request.cookies
+  |> List.map (fun cookie -> (Http_cookie.name cookie, cookie))
 
 (* Pretty printers *)
 
@@ -283,6 +288,14 @@ let request (client_addr, client_fd) unconsumed =
            headers;
            client_addr;
            client_fd;
+           cookies =
+             lazy
+               (match List.assoc_opt "cookie" headers with
+               | Some v -> (
+                   match Http_cookie.of_cookie v with
+                   | Ok cookies -> cookies
+                   | Error e -> request_error "%s" e)
+               | None -> []);
            body = Cstruct.empty;
            unconsumed;
          }

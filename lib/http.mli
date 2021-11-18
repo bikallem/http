@@ -38,6 +38,10 @@ val client_addr : request -> Unix.sockaddr
 val content_length : request -> int
 val body : request -> Cstruct.t
 
+val cookies : request -> (string * Http_cookie.t) list
+(** [cookies request] returns a list of pair [cookie_name * cookie] in
+    [request]. See {:https://tools.ietf.org/html/rfc6265#section-4.2} *)
+
 (** {1 Pretty Printers} *)
 
 val pp_request : Format.formatter -> request -> unit
