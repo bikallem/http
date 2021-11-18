@@ -14,6 +14,7 @@ depends: [
   "fmt"
   "angstrom"
   "domainslib"
+  "http-cookie"
   "extunix"
   "odoc" {with-doc}
 ]

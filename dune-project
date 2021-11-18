@@ -19,4 +19,5 @@
   fmt
   angstrom
   domainslib
+  http-cookie
   extunix))

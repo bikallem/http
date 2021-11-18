@@ -31,8 +31,8 @@ module Smap = Map.Make (String)
 type response = {
   response_code : response_code;
   headers : header list;
-  (* ; cookies: Http_cookie.t Smap.t *)
-  body : Cstruct.t;
+  cookies : Http_cookie.t Smap.t;
+  body : bytes;
 }
 
 and response_code = int * string
@@ -232,20 +232,16 @@ let ok = response_code 200
 let internal_server_error = response_code 500
 let bad_request = response_code 400
 
-let response_bigstring ?(response_code = ok) ?(headers = []) body =
+let response ?(response_code = ok) ?(headers = []) body =
   {
     response_code;
     headers =
       List.map
         (fun (name, value) -> (String.lowercase_ascii name, value))
-        headers
-      (* ; cookies= Smap.empty *);
-    body = Cstruct.of_bigarray body;
+        headers;
+    cookies = Smap.empty;
+    body = Bytes.unsafe_of_string body;
   }
-
-let response ?response_code ?headers body =
-  response_bigstring ?response_code ?headers
-    (Bigstringaf.of_string body ~off:0 ~len:(String.length body))
 
 let request (client_addr, client_fd) unconsumed =
   let read_body request =
@@ -327,7 +323,104 @@ let request (client_addr, client_fd) unconsumed =
   in
   parse_request (Buffered.parse request_or_eof)
 
-let write_response _client_fd _response = ()
+(** [to_rfc1123 t] converts [t] to a string in a format as defined by RFC 1123. *)
+let datetime_to_string (tm : Unix.tm) =
+  let weekday =
+    match tm.tm_wday with
+    | 0 -> "Sun"
+    | 1 -> "Mon"
+    | 2 -> "Tue"
+    | 3 -> "Wed"
+    | 4 -> "Thu"
+    | 5 -> "Fri"
+    | 6 -> "Sat"
+    | 7 -> "Sun"
+    | _ -> assert false
+  in
+  let month =
+    match tm.tm_mon with
+    | 0 -> "Jan"
+    | 1 -> "Feb"
+    | 2 -> "Mar"
+    | 3 -> "Apr"
+    | 4 -> "May"
+    | 5 -> "Jun"
+    | 6 -> "Jul"
+    | 7 -> "Aug"
+    | 8 -> "Sep"
+    | 9 -> "Oct"
+    | 10 -> "Nov"
+    | 11 -> "Dec"
+    | _ -> assert false
+  in
+  Format.sprintf "%s, %02d %s %04d %02d:%02d:%02d GMT" weekday tm.tm_mday month
+    (1900 + tm.tm_year) tm.tm_hour tm.tm_min tm.tm_sec
+
+(* TODO replace this with eio vector version when available. *)
+let write_response fd { response_code; headers; body; cookies } =
+  let buf = Buffer.create io_buffer_size in
+
+  (* Write response status line. *)
+  let status_line =
+    Format.sprintf "HTTP/1.1 %d %s\r\n" (code_int response_code)
+      (code_reason_phrase response_code)
+  in
+  Buffer.add_string buf status_line;
+
+  (* Add set-cookie headers if we have cookies. *)
+  let headers =
+    if Smap.cardinal cookies > 0 then
+      let headers =
+        Smap.fold
+          (fun _cookie_name cookie headers ->
+            ("set-cookie", Http_cookie.to_set_cookie cookie) :: headers)
+          cookies headers
+      in
+      (* Update cache-control header so that we don't cache cookies. *)
+      let no_cache = {|no-cache="Set-Cookie"|} in
+      let cache_control_hdr = "cache-control" in
+      match List.assoc_opt cache_control_hdr headers with
+      | Some hdr_value ->
+          let headers = List.remove_assoc cache_control_hdr headers in
+          (cache_control_hdr, Format.sprintf "%s, %s" hdr_value no_cache)
+          :: headers
+      | None -> (cache_control_hdr, no_cache) :: headers
+    else headers
+  in
+
+  let body_len = Bytes.length body in
+
+  (* Add content-length headers if it doesn't exist. *)
+  let headers =
+    if List.exists (fun (hdr, _) -> hdr = "content-length") headers then headers
+    else ("content-length", string_of_int body_len) :: headers
+  in
+
+  (* Add Date header. *)
+  let headers =
+    if List.exists (fun (hdr, _) -> hdr = "date") headers then headers
+    else ("date", datetime_to_string @@ Unix.(time () |> gmtime)) :: headers
+  in
+
+  (* Write response headers. *)
+  List.iter
+    (fun (name, v) ->
+      let hdr = Format.sprintf "%s: %s\r\n" name v in
+      Buffer.add_string buf hdr)
+    headers;
+
+  (* Write response body. *)
+  Buffer.add_string buf "\r\n";
+
+  if body_len > 0 then Buffer.add_bytes buf body;
+
+  (* TODO write _wrote to log? *)
+  let _wrote =
+    Cstruct.of_string (Buffer.contents buf)
+    |> Cstruct.to_bigarray
+    |> ExtUnix.All.BA.write fd
+  in
+  ()
 
 let handle_client_connection (client_addr, client_fd) request_handler =
   let handle_request (req : request) =
