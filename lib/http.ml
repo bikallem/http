@@ -345,12 +345,11 @@ let handle_client_connection (client_addr, client_fd) request_handler =
         `Close_connection
   in
   let rec loop_requests unconsumed =
-    let request = request (client_addr, client_fd) unconsumed in
-    match request with
-    | `Request req -> (
-        match handle_request req with
+    match request (client_addr, client_fd) unconsumed with
+    | `Request request -> (
+        match handle_request request with
         | `Close_connection -> Unix.close client_fd
-        | `Next_request -> loop_requests req.unconsumed)
+        | `Next_request -> loop_requests request.unconsumed)
     | `Connection_closed -> Unix.close client_fd
     | `Error _e ->
         write_response client_fd (response ~response_code:bad_request "");
