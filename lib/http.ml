@@ -1,5 +1,19 @@
 open Domainslib
 
+let _debug_on =
+  ref
+    (match String.trim @@ Sys.getenv "HTTP_DBG" with
+    | "" -> false
+    | _ ->
+        Printexc.record_backtrace true;
+        true
+    | exception _ -> false)
+
+let debug k =
+  if !_debug_on then
+    k (fun fmt ->
+        Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") stdout fmt)
+
 type request = {
   method' : method';
   target : string;
@@ -288,7 +302,7 @@ let request (client_addr, client_fd) unconsumed =
          | Some len -> (
              try int_of_string len
              with _ -> request_error "Invalid content-length value: %s" len)
-         | None -> request_error "content-length header not found"
+         | None -> 0
        in
        let request =
          {
@@ -322,7 +336,7 @@ let request (client_addr, client_fd) unconsumed =
         let unconsumed_length = Cstruct.length unconsumed in
         let len = io_buffer_size - unconsumed_length in
         let buf = Cstruct.create len in
-        let len' = ExtUnix.All.BA.read client_fd buf.buffer in
+        let len' = ExtUnix.All.BA.single_read client_fd buf.buffer in
         if len' = 0 then parse_request (k `Eof)
         else
           let buf = if len' != len then Cstruct.sub buf 0 len' else buf in
@@ -440,10 +454,11 @@ let write_response fd { response_code; headers; body; cookies } =
 
   Cstruct.of_string (Buffer.contents buf)
   |> Cstruct.to_bigarray
-  |> ExtUnix.All.BA.write fd
+  |> ExtUnix.All.BA.single_write fd
   |> ignore
 
 let handle_client_connection (client_addr, client_fd) request_handler =
+  (* debug (fun k -> k "Waiting for new request ..."); *)
   let handle_request (req : request) =
     match request_handler req with
     | response ->
@@ -451,9 +466,11 @@ let handle_client_connection (client_addr, client_fd) request_handler =
         `Next_request
     | exception exn ->
         (match exn with
-        | Request_error _error ->
+        | Request_error error ->
+            debug (fun k -> k "Request error: %s" error);
             write_response client_fd (response ~response_code:bad_request "")
-        | _exn ->
+        | exn ->
+            debug (fun k -> k "Exception: %s" (Printexc.to_string exn));
             write_response client_fd
               (response ~response_code:internal_server_error ""));
         `Close_connection
@@ -461,11 +478,14 @@ let handle_client_connection (client_addr, client_fd) request_handler =
   let rec loop_requests unconsumed =
     match request (client_addr, client_fd) unconsumed with
     | `Request request -> (
+        debug (fun k -> k "%s\n%!" (request_to_string request));
         match handle_request request with
         | `Close_connection -> Unix.close client_fd
         | `Next_request -> (loop_requests [@tailcall]) request.unconsumed)
     | `Connection_closed -> Unix.close client_fd
-    | `Error _e ->
+    | `Error e ->
+        debug (fun k ->
+            k "Error while parsing request: %s\nClosing connection" e);
         write_response client_fd (response ~response_code:bad_request "");
         Unix.close client_fd
   in
@@ -485,7 +505,16 @@ let start ?(domains = 1) ~port request_handler =
   Unix.listen server_sock 100;
   while true do
     let fd, client_addr = accept_non_intr server_sock in
-    (fun () -> handle_client_connection (client_addr, fd) request_handler)
-    |> Task.async task_pool
-    |> ignore
+
+    (* DOESN'T WORK: Why? It seems the promise is not scheduled unless it is awaited. *)
+    (* (fun () -> handle_client_connection (client_addr, fd) request_handler) *)
+    (* |> Task.async task_pool *)
+    (* |> ignore *)
+
+    (* WORKS: since we await the promise. *)
+    let t =
+      (fun () -> handle_client_connection (client_addr, fd) request_handler)
+      |> Task.async task_pool
+    in
+    Task.await task_pool t
   done
