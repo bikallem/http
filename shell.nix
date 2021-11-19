@@ -22,7 +22,7 @@ pkgs.mkShell {
     rustup
     opam
     bc
-    curlie
+    httpie
   ];
 
   dontPatchShebangs = "1";

@@ -1,5 +1,28 @@
 open Domainslib
 
+let _debug_on =
+  ref
+    (match String.trim @@ Sys.getenv "HTTP_DBG" with
+    | "" -> false
+    | _ ->
+        Printexc.record_backtrace true;
+        true
+    | exception _ -> false)
+
+(* Are we in a test environment. Need this so that our tests don't fail un-necessarily due to
+   datetime value. *)
+let _test_on =
+  ref
+    (match String.trim (Sys.getenv "HTTP_TEST") with
+    | "" -> false
+    | _ -> true
+    | exception _ -> false)
+
+let debug k =
+  if !_debug_on then
+    k (fun fmt ->
+        Printf.kfprintf (fun oc -> Printf.fprintf oc "\n%!") stdout fmt)
+
 type request = {
   method' : method';
   target : string;
@@ -288,7 +311,7 @@ let request (client_addr, client_fd) unconsumed =
          | Some len -> (
              try int_of_string len
              with _ -> request_error "Invalid content-length value: %s" len)
-         | None -> request_error "content-length header not found"
+         | None -> 0
        in
        let request =
          {
@@ -322,7 +345,7 @@ let request (client_addr, client_fd) unconsumed =
         let unconsumed_length = Cstruct.length unconsumed in
         let len = io_buffer_size - unconsumed_length in
         let buf = Cstruct.create len in
-        let len' = ExtUnix.All.BA.read client_fd buf.buffer in
+        let len' = ExtUnix.All.BA.single_read client_fd buf.buffer in
         if len' = 0 then parse_request (k `Eof)
         else
           let buf = if len' != len then Cstruct.sub buf 0 len' else buf in
@@ -380,6 +403,20 @@ let datetime_to_string (tm : Unix.tm) =
   Format.sprintf "%s, %02d %s %04d %02d:%02d:%02d GMT" weekday tm.tm_mday month
     (1900 + tm.tm_year) tm.tm_hour tm.tm_min tm.tm_sec
 
+let epoch_time =
+  Unix.
+    {
+      tm_sec = 0;
+      tm_min = 0;
+      tm_hour = 0;
+      tm_mday = 0;
+      tm_mon = 0;
+      tm_year = 0;
+      tm_wday = 0;
+      tm_yday = 0;
+      tm_isdst = false;
+    }
+
 (* TODO replace this with eio vector version when available. *)
 let write_response fd { response_code; headers; body; cookies } =
   let buf = Buffer.create io_buffer_size in
@@ -423,7 +460,9 @@ let write_response fd { response_code; headers; body; cookies } =
   (* Add Date header. *)
   let headers =
     if List.exists (fun (hdr, _) -> hdr = "date") headers then headers
-    else ("date", datetime_to_string @@ Unix.(time () |> gmtime)) :: headers
+    else 
+      let datetime = if !_test_on then epoch_time else Unix.(time () |> gmtime) in 
+      ("date", datetime_to_string datetime):: headers
   in
 
   (* Write response headers. *)
@@ -440,7 +479,7 @@ let write_response fd { response_code; headers; body; cookies } =
 
   Cstruct.of_string (Buffer.contents buf)
   |> Cstruct.to_bigarray
-  |> ExtUnix.All.BA.write fd
+  |> ExtUnix.All.BA.single_write fd
   |> ignore
 
 let handle_client_connection (client_addr, client_fd) request_handler =
@@ -451,9 +490,11 @@ let handle_client_connection (client_addr, client_fd) request_handler =
         `Next_request
     | exception exn ->
         (match exn with
-        | Request_error _error ->
+        | Request_error error ->
+            debug (fun k -> k "Request error: %s" error);
             write_response client_fd (response ~response_code:bad_request "")
-        | _exn ->
+        | exn ->
+            debug (fun k -> k "Exception: %s" (Printexc.to_string exn));
             write_response client_fd
               (response ~response_code:internal_server_error ""));
         `Close_connection
@@ -461,11 +502,14 @@ let handle_client_connection (client_addr, client_fd) request_handler =
   let rec loop_requests unconsumed =
     match request (client_addr, client_fd) unconsumed with
     | `Request request -> (
+        debug (fun k -> k "%s\n%!" (request_to_string request));
         match handle_request request with
         | `Close_connection -> Unix.close client_fd
         | `Next_request -> (loop_requests [@tailcall]) request.unconsumed)
     | `Connection_closed -> Unix.close client_fd
-    | `Error _e ->
+    | `Error e ->
+        debug (fun k ->
+            k "Error while parsing request: %s\nClosing connection" e);
         write_response client_fd (response ~response_code:bad_request "");
         Unix.close client_fd
   in
@@ -475,14 +519,36 @@ let rec accept_non_intr s =
   try Unix.accept ~cloexec:true s
   with Unix.Unix_error (Unix.EINTR, _, _) -> accept_non_intr s
 
-let start ?(domains = 1) ~port request_handler =
+let cpu_count () =
+  try
+    match Sys.os_type with
+    | "Win32" -> int_of_string (Sys.getenv "NUMBER_OF_PROCESSORS")
+    | _ -> (
+        let i = Unix.open_process_in "getconf _NPROCESSORS_ONLN" in
+        let close () = ignore (Unix.close_process_in i) in
+        try
+          let in_channel = Scanf.Scanning.from_channel i in
+          Scanf.bscanf in_channel "%d" (fun n ->
+              close ();
+              n)
+        with e ->
+          close ();
+          raise e)
+  with
+  | Not_found | Sys_error _ | Failure _ | Scanf.Scan_failure _ | End_of_file
+  | Unix.Unix_error (_, _, _)
+  ->
+    1
+
+let start ?(domains = cpu_count ()) ~port request_handler =
+  (* TODO num_additional_domains needs to be greater than 1 it seems. *)
   let task_pool = Task.setup_pool ~num_additional_domains:(domains - 1) () in
   let listen_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
   let server_sock = Unix.(socket PF_INET SOCK_STREAM 0) in
   Unix.setsockopt server_sock Unix.SO_REUSEADDR true;
   Unix.setsockopt server_sock Unix.SO_REUSEPORT true;
   Unix.bind server_sock listen_address;
-  Unix.listen server_sock 100;
+  Unix.listen server_sock 10_000;
   while true do
     let fd, client_addr = accept_non_intr server_sock in
     (fun () -> handle_client_connection (client_addr, fd) request_handler)
