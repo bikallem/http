@@ -495,7 +495,28 @@ let rec accept_non_intr s =
   try Unix.accept ~cloexec:true s
   with Unix.Unix_error (Unix.EINTR, _, _) -> accept_non_intr s
 
-let start ?(domains = 1) ~port request_handler =
+let cpu_count () =
+  try
+    match Sys.os_type with
+    | "Win32" -> int_of_string (Sys.getenv "NUMBER_OF_PROCESSORS")
+    | _ -> (
+        let i = Unix.open_process_in "getconf _NPROCESSORS_ONLN" in
+        let close () = ignore (Unix.close_process_in i) in
+        try
+          let in_channel = Scanf.Scanning.from_channel i in
+          Scanf.bscanf in_channel "%d" (fun n ->
+              close ();
+              n)
+        with e ->
+          close ();
+          raise e)
+  with
+  | Not_found | Sys_error _ | Failure _ | Scanf.Scan_failure _ | End_of_file
+  | Unix.Unix_error (_, _, _)
+  ->
+    1
+
+let start ?(domains = cpu_count ()) ~port request_handler =
   (* TODO num_additional_domains needs to be greater than 1 it seems. *)
   let task_pool = Task.setup_pool ~num_additional_domains:(domains - 1) () in
   let listen_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
@@ -503,7 +524,7 @@ let start ?(domains = 1) ~port request_handler =
   Unix.setsockopt server_sock Unix.SO_REUSEADDR true;
   Unix.setsockopt server_sock Unix.SO_REUSEPORT true;
   Unix.bind server_sock listen_address;
-  Unix.listen server_sock 100;
+  Unix.listen server_sock 10_000;
   while true do
     let fd, client_addr = accept_non_intr server_sock in
     (fun () -> handle_client_connection (client_addr, fd) request_handler)
