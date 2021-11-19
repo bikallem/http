@@ -9,6 +9,15 @@ let _debug_on =
         true
     | exception _ -> false)
 
+(* Are we in a test environment. Need this so that our tests don't fail un-necessarily due to
+   datetime value. *)
+let _test_on =
+  ref
+    (match String.trim (Sys.getenv "HTTP_TEST") with
+    | "" -> false
+    | _ -> true
+    | exception _ -> false)
+
 let debug k =
   if !_debug_on then
     k (fun fmt ->
@@ -394,6 +403,20 @@ let datetime_to_string (tm : Unix.tm) =
   Format.sprintf "%s, %02d %s %04d %02d:%02d:%02d GMT" weekday tm.tm_mday month
     (1900 + tm.tm_year) tm.tm_hour tm.tm_min tm.tm_sec
 
+let epoch_time =
+  Unix.
+    {
+      tm_sec = 0;
+      tm_min = 0;
+      tm_hour = 0;
+      tm_mday = 0;
+      tm_mon = 0;
+      tm_year = 0;
+      tm_wday = 0;
+      tm_yday = 0;
+      tm_isdst = false;
+    }
+
 (* TODO replace this with eio vector version when available. *)
 let write_response fd { response_code; headers; body; cookies } =
   let buf = Buffer.create io_buffer_size in
@@ -437,7 +460,9 @@ let write_response fd { response_code; headers; body; cookies } =
   (* Add Date header. *)
   let headers =
     if List.exists (fun (hdr, _) -> hdr = "date") headers then headers
-    else ("date", datetime_to_string @@ Unix.(time () |> gmtime)) :: headers
+    else 
+      let datetime = if !_test_on then epoch_time else Unix.(time () |> gmtime) in 
+      ("date", datetime_to_string datetime):: headers
   in
 
   (* Write response headers. *)
@@ -458,7 +483,6 @@ let write_response fd { response_code; headers; body; cookies } =
   |> ignore
 
 let handle_client_connection (client_addr, client_fd) request_handler =
-  (* debug (fun k -> k "Waiting for new request ..."); *)
   let handle_request (req : request) =
     match request_handler req with
     | response ->

@@ -1,0 +1,7 @@
+(executable
+ (name hello_world)
+ (public_name hello-world)
+ (libraries http))
+
+(cram
+ (deps %{bin:hello-world}))
