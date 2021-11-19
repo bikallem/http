@@ -21,4 +21,5 @@
   angstrom
   domainslib
   http-cookie
+  cstruct
   extunix))

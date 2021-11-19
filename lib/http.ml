@@ -40,7 +40,6 @@ and response_code = int * string
 (* code, reason phrase *)
 
 and handler = request -> response
-
 and middleware = handler -> handler
 
 exception Request_error of string
@@ -439,13 +438,10 @@ let write_response fd { response_code; headers; body; cookies } =
 
   if body_len > 0 then Buffer.add_bytes buf body;
 
-  (* TODO write _wrote to log? *)
-  let _wrote =
-    Cstruct.of_string (Buffer.contents buf)
-    |> Cstruct.to_bigarray
-    |> ExtUnix.All.BA.write fd
-  in
-  ()
+  Cstruct.of_string (Buffer.contents buf)
+  |> Cstruct.to_bigarray
+  |> ExtUnix.All.BA.write fd
+  |> ignore
 
 let handle_client_connection (client_addr, client_fd) request_handler =
   let handle_request (req : request) =
@@ -489,7 +485,7 @@ let start ?(domains = 1) ~port request_handler =
   Unix.listen server_sock 100;
   while true do
     let fd, client_addr = accept_non_intr server_sock in
-    ignore
-    @@ Task.async task_pool (fun () ->
-           handle_client_connection (client_addr, fd) request_handler)
+    (fun () -> handle_client_connection (client_addr, fd) request_handler)
+    |> Task.async task_pool
+    |> ignore
   done

@@ -25,7 +25,6 @@ and response_code
     details on http response codes *)
 
 and handler = request -> response
-
 and middleware = handler -> handler
 
 (** {1 Request} *)

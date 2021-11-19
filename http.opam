@@ -15,6 +15,7 @@ depends: [
   "angstrom"
   "domainslib"
   "http-cookie"
+  "cstruct"
   "extunix"
   "odoc" {with-doc}
 ]
