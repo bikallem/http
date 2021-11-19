@@ -460,9 +460,11 @@ let write_response fd { response_code; headers; body; cookies } =
   (* Add Date header. *)
   let headers =
     if List.exists (fun (hdr, _) -> hdr = "date") headers then headers
-    else 
-      let datetime = if !_test_on then epoch_time else Unix.(time () |> gmtime) in 
-      ("date", datetime_to_string datetime):: headers
+    else
+      let datetime =
+        if !_test_on then epoch_time else Unix.(time () |> gmtime)
+      in
+      ("date", datetime_to_string datetime) :: headers
   in
 
   (* Write response headers. *)
