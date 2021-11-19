@@ -496,6 +496,7 @@ let rec accept_non_intr s =
   with Unix.Unix_error (Unix.EINTR, _, _) -> accept_non_intr s
 
 let start ?(domains = 1) ~port request_handler =
+  (* TODO num_additional_domains needs to be greater than 1 it seems. *)
   let task_pool = Task.setup_pool ~num_additional_domains:(domains - 1) () in
   let listen_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
   let server_sock = Unix.(socket PF_INET SOCK_STREAM 0) in
@@ -505,16 +506,7 @@ let start ?(domains = 1) ~port request_handler =
   Unix.listen server_sock 100;
   while true do
     let fd, client_addr = accept_non_intr server_sock in
-
-    (* DOESN'T WORK: Why? It seems the promise is not scheduled unless it is awaited. *)
-    (* (fun () -> handle_client_connection (client_addr, fd) request_handler) *)
-    (* |> Task.async task_pool *)
-    (* |> ignore *)
-
-    (* WORKS: since we await the promise. *)
-    let t =
-      (fun () -> handle_client_connection (client_addr, fd) request_handler)
-      |> Task.async task_pool
-    in
-    Task.await task_pool t
+    (fun () -> handle_client_connection (client_addr, fd) request_handler)
+    |> Task.async task_pool
+    |> ignore
   done
