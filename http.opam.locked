@@ -1,0 +1,73 @@
+opam-version: "2.0"
+name: "http"
+version: "0.0.1"
+synopsis: "HTTP 1.1 library"
+description: "A HTTP 1.1 server capable of exploiting multicores"
+maintainer: ["Bikal Lem" "<gbikal+git@gmail.com"]
+authors: ["Bikal Lem" "<gbikal+git@gmail.com>"]
+license: "MPL-2.0"
+homepage: "https://github.com/bikallem/http"
+bug-reports: "https://github.com/bikallem/http/issues"
+depends: [
+  "angstrom" {= "0.15.0"}
+  "astring" {= "0.8.5" & with-doc}
+  "base-bigarray" {= "base"}
+  "base-bytes" {= "base"}
+  "base-domains" {= "base"}
+  "base-threads" {= "base"}
+  "base-unix" {= "base"}
+  "bigarray-compat" {= "1.0.0"}
+  "bigstringaf" {= "0.8.0"}
+  "cmdliner" {= "1.0.4"}
+  "conf-pkg-config" {= "2"}
+  "cppo" {= "1.6.8" & with-doc}
+  "csexp" {= "1.5.1"}
+  "cstruct" {= "6.0.1"}
+  "domainslib" {= "0.3.2"}
+  "dune" {= "2.9.1"}
+  "dune-configurator" {= "2.9.1"}
+  "extunix" {= "0.3.2"}
+  "fmt" {= "0.9.0"}
+  "fpath" {= "0.7.3" & with-doc}
+  "http-cookie" {= "4.2.0"}
+  "logs" {= "0.7.0" & with-doc}
+  "ocaml" {= "4.12.0"}
+  "ocaml-compiler-libs" {= "v0.12.4"}
+  "ocaml-config" {= "2"}
+  "ocaml-migrate-parsetree" {= "2.2.0" & with-doc}
+  "ocaml-option-nnp" {= "1"}
+  "ocaml-syntax-shims" {= "1.0.0"}
+  "ocaml-variants" {= "4.12.0+domains"}
+  "ocamlbuild" {= "0.14.0"}
+  "ocamlfind" {= "1.9.1"}
+  "odoc" {= "2.0.0" & with-doc}
+  "odoc-parser" {= "0.9.0" & with-doc}
+  "ppx_derivers" {= "1.2.1"}
+  "ppxlib" {= "0.23.0"}
+  "re" {= "1.10.3" & with-doc}
+  "result" {= "1.5"}
+  "seq" {= "base" & with-doc}
+  "sexplib0" {= "v0.14.0"}
+  "stdlib-shims" {= "0.3.0"}
+  "topkg" {= "1.0.4"}
+  "tyxml" {= "4.5.0" & with-doc}
+  "uchar" {= "0.0.2" & with-doc}
+  "uutf" {= "1.0.2" & with-doc}
+]
+build: [
+  ["dune" "subst"] {dev}
+  [
+    "dune"
+    "build"
+    "-p"
+    name
+    "-j"
+    jobs
+    "--promote-install-files=false"
+    "@install"
+    "@runtest" {with-test}
+    "@doc" {with-doc}
+  ]
+  ["dune" "install" "-p" name "--create-install-files" name]
+]
+dev-repo: "git+https://github.com/bikallem/http.git"
