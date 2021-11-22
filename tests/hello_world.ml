@@ -1,6 +1,8 @@
 let () =
-  let port = ref 3000 in
-  Arg.parse
-    [ ("-p", Arg.Set_int port, " Listening port number (3000 by default)") ]
-    ignore "A hello-world HTTP server";
-  Http.start ~port:!port (fun _ -> Http.response "hello world")
+  Http.start ~port:3000 (fun request ->
+      let body = Http.body request |> Option.get in
+      let buf = Buffer.create 0 in
+      let fmt = Format.formatter_of_buffer buf in
+      Http.pp_request fmt request;
+      Format.fprintf fmt "\n\n%s" (Cstruct.to_string body);
+      Http.response (Buffer.contents buf))

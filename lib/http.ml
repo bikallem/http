@@ -32,7 +32,7 @@ type request = {
   client_addr : Unix.sockaddr;
   client_fd : Unix.file_descr;
   cookies : Http_cookie.t list Lazy.t;
-  mutable body : Cstruct.t;
+  body : Cstruct.t option;
   mutable unconsumed : Cstruct.t;
       (* unconsumed - bytes remaining after request is processed *)
 }
@@ -282,93 +282,84 @@ let html body =
 
 (* Request *)
 
-let request (client_addr, client_fd) unconsumed =
-  let read_body request =
-    let content_length = content_length request in
-    let unconsumed_length = Cstruct.length request.unconsumed in
-    if content_length = 0 then Cstruct.empty
-    else if content_length = unconsumed_length then request.unconsumed
-    else if content_length < unconsumed_length then (
-      let sz = unconsumed_length - content_length in
-      let buf = Cstruct.(sub request.unconsumed 0 content_length) in
-      let unconsumed = Cstruct.sub request.unconsumed content_length sz in
-      request.unconsumed <- unconsumed;
-      buf)
-    else
-      let sz = content_length - unconsumed_length in
-      let buf = Cstruct.create sz in
-      let sz' = ExtUnix.All.BA.read request.client_fd buf.buffer in
-      let buf = if sz' <> sz then Cstruct.sub buf 0 sz' else buf in
-      if unconsumed_length > 0 then Cstruct.append request.unconsumed buf
-      else buf
-  in
-  let request_or_eof =
-    let request' =
-      (let* method', target, http_version = request_line in
-       let+ headers = header_fields in
-       let content_length =
-         match List.assoc_opt "content-length" headers with
-         | Some len -> (
-             try int_of_string len
-             with _ -> request_error "Invalid content-length value: %s" len)
-         | None -> 0
-       in
-       let request =
-         {
-           method';
-           target;
-           http_version;
-           content_length;
-           headers;
-           client_addr;
-           client_fd;
-           cookies =
-             lazy
-               (match List.assoc_opt "cookie" headers with
-               | Some v -> (
-                   match Http_cookie.of_cookie v with
-                   | Ok cookies -> cookies
-                   | Error e -> request_error "%s" e)
-               | None -> []);
-           body = Cstruct.empty;
-           unconsumed;
-         }
-       in
-       `Request request)
-      <* crlf
-    in
-    let eof = end_of_input >>| fun () -> `Connection_closed in
-    request' <|> eof
-  in
-  let rec parse_request = function
+let parse :
+    'a Angstrom.t ->
+    Unix.file_descr ->
+    Cstruct.t ->
+    [ `Done of Cstruct.t * 'a | `Error of string ] =
+ fun p client_fd unconsumed ->
+  let rec loop = function
     | Buffered.Partial k ->
         let unconsumed_length = Cstruct.length unconsumed in
-        let len = io_buffer_size - unconsumed_length in
-        let buf = Cstruct.create len in
-        let len' = ExtUnix.All.BA.single_read client_fd buf.buffer in
-        if len' = 0 then parse_request (k `Eof)
+        if unconsumed_length > 0 then
+          loop @@ k (`Bigstring (Cstruct.to_bigarray unconsumed))
         else
-          let buf = if len' != len then Cstruct.sub buf 0 len' else buf in
-          let bigstring =
-            (if unconsumed_length > 0 then Cstruct.(append unconsumed buf)
-            else buf)
-            |> Cstruct.to_bigarray
-          in
-          parse_request (k (`Bigstring bigstring))
-    | Buffered.Done ({ off; len; buf }, x) -> (
+          let buf = Cstruct.create io_buffer_size in
+          let len' = ExtUnix.All.BA.single_read client_fd buf.buffer in
+          if len' = 0 then loop (k `Eof)
+          else
+            let buf =
+              if len' != io_buffer_size then Cstruct.sub buf 0 len' else buf
+            in
+            let data =
+              (if unconsumed_length > 0 then Cstruct.(append unconsumed buf)
+              else buf)
+              |> Cstruct.to_bigarray
+            in
+            loop (k (`Bigstring data))
+    | Buffered.Done ({ off; len; buf }, x) ->
         let unconsumed =
           if len > 0 then Cstruct.of_bigarray ~off ~len buf else Cstruct.empty
         in
-        match x with
-        | `Request (req : request) ->
-            req.body <- read_body req;
-            req.unconsumed <- unconsumed;
-            `Request req
-        | x -> x)
+        `Done (unconsumed, x)
     | Buffered.Fail (_, marks, err) ->
         `Error (String.concat " > " marks ^ ": " ^ err)
   in
-  parse_request (Buffered.parse request_or_eof)
+  loop (Buffered.parse p)
+
+let request (client_addr, client_fd) =
+  let request' =
+    let* method', target, http_version = request_line in
+    let* headers = header_fields in
+    let content_length =
+      match List.assoc_opt "content-length" headers with
+      | Some len -> (
+          try int_of_string len
+          with _ -> request_error "Invalid content-length value: %s" len)
+      | None -> 0
+    in
+    let+ body =
+      if content_length > 0 then
+        crlf
+        *> ( take_bigstring content_length >>| fun body ->
+             Some (Cstruct.buffer body) )
+      else crlf *> return None
+    in
+    let request =
+      {
+        method';
+        target;
+        http_version;
+        content_length;
+        headers;
+        client_addr;
+        client_fd;
+        cookies =
+          lazy
+            (match List.assoc_opt "cookie" headers with
+            | Some v -> (
+                match Http_cookie.of_cookie v with
+                | Ok cookies -> cookies
+                | Error e -> request_error "%s" e)
+            | None -> []);
+        body;
+        unconsumed = Cstruct.empty;
+      }
+    in
+    `Request request
+  in
+  let eof = end_of_input >>| fun () -> `Connection_closed in
+  parse (request' <|> eof) client_fd Cstruct.empty
 
 (** [to_rfc1123 t] converts [t] to a string in a format as defined by RFC 1123. *)
 let datetime_to_string (tm : Unix.tm) =
@@ -501,21 +492,22 @@ let handle_client_connection (client_addr, client_fd) request_handler =
               (response ~response_code:internal_server_error ""));
         `Close_connection
   in
-  let rec loop_requests unconsumed =
-    match request (client_addr, client_fd) unconsumed with
-    | `Request request -> (
+  let rec loop_requests () =
+    match request (client_addr, client_fd) with
+    | `Done (unconsumed, `Request request) -> (
         debug (fun k -> k "%s\n%!" (request_to_string request));
+        request.unconsumed <- unconsumed;
         match handle_request request with
         | `Close_connection -> Unix.close client_fd
-        | `Next_request -> (loop_requests [@tailcall]) request.unconsumed)
-    | `Connection_closed -> Unix.close client_fd
+        | `Next_request -> (loop_requests [@tailcall]) ())
+    | `Done (_, `Connection_closed) -> Unix.close client_fd
     | `Error e ->
         debug (fun k ->
             k "Error while parsing request: %s\nClosing connection" e);
         write_response client_fd (response ~response_code:bad_request "");
         Unix.close client_fd
   in
-  loop_requests Cstruct.empty
+  loop_requests ()
 
 let rec accept_non_intr s =
   try Unix.accept ~cloexec:true s
