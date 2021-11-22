@@ -2,42 +2,34 @@ Start hello-world http server.
 
   $ hello-world&
 
-Test GET method
-  $ http -v GET localhost:3000
-  GET / HTTP/1.1
-  User-Agent: HTTPie/2.6.0
-  Accept-Encoding: gzip, deflate, br
-  Accept: application/json, */*;q=0.5
-  Connection: keep-alive
-  Content-Type: application/json
-  Host: localhost:3000
-  
-  
-  
-  HTTP/1.1 200 OK
-  date: Sun, 00 Jan 1900 00:00:00 GMT
-  content-length: 11
-  
-  hello world
-
-Test POST method
-  $ http -v POST localhost:3000
+  $ http -v --ignore-stdin localhost:3000 name=helloworld
   POST / HTTP/1.1
   User-Agent: HTTPie/2.6.0
   Accept-Encoding: gzip, deflate, br
   Accept: application/json, */*;q=0.5
   Connection: keep-alive
   Content-Type: application/json
-  Content-Length: 0
+  Content-Length: 22
   Host: localhost:3000
   
-  
+  {"name": "helloworld"}
   
   HTTP/1.1 200 OK
   date: Sun, 00 Jan 1900 00:00:00 GMT
-  content-length: 11
+  content-length: 268
   
-  hello world
+  meth: POST
+  target: /
+  http_version: 1,1
+  headers:
+   host: localhost:3000
+   user-agent: HTTPie/2.6.0
+   accept-encoding: gzip, deflate, br
+   accept: application/json, */*;q=0.5
+   connection: keep-alive
+   content-type: application/json
+   content-length: 22
+  
+  {"name": "helloworld"}
 
-Shutdown hello-world server.
   $ lsof -ti tcp:3000 | xargs kill

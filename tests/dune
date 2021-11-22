@@ -1,7 +1,10 @@
 (executable
  (name hello_world)
+ (modules hello_world)
  (public_name hello-world)
  (libraries http))
 
 (cram
+ (applies_to hello_world.t)
  (deps %{bin:hello-world}))
+

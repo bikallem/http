@@ -35,7 +35,7 @@ val http_version : request -> int * int
 val headers : request -> header list
 val client_addr : request -> Unix.sockaddr
 val content_length : request -> int
-val body : request -> Cstruct.t
+val body : request -> Cstruct.t option
 
 val cookies : request -> (string * Http_cookie.t) list
 (** [cookies request] returns a list of pair [cookie_name * cookie] in
