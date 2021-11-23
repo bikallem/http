@@ -10,8 +10,10 @@ Below is the screenshot displaying all cores being used while processing request
 - Utilize all cores/CPUs by exploiting OCaml 5.0 features - specifically `Domains` and `effects`.
 - Prefer direct style api over monadic api.
 - Easy experimentation with various threading models - such as domainslib, eio or some other new mechanisms.
-- linux-x86 only (due to OCaml 5.0 being x86 only) 
 - Maintain Minimal dependencies (?)
+
+# Limitations
+- linux-x86 only (due to OCaml 5.0 being x86 only) 
 
 # Non Goals
 - Compatibility with lwt/async
