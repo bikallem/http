@@ -23,6 +23,7 @@ pkgs.mkShell {
     opam
     bc
     httpie
+    wrk
   ];
 
   dontPatchShebangs = "1";
