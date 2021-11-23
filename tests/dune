@@ -4,7 +4,12 @@
  (public_name hello-world)
  (libraries http))
 
+(executable
+ (name echo_server)
+ (modules echo_server)
+ (public_name echo-server)
+ (libraries http))
+
 (cram
  (applies_to hello_world.t)
- (deps %{bin:hello-world}))
-
+ (deps %{bin:hello-world} %{bin:echo-server}))
