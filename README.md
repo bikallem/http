@@ -13,7 +13,8 @@ Below is the screenshot displaying all cores being used while processing request
 - Maintain Minimal dependencies (?)
 
 # Limitations
-- linux-x86 only (due to OCaml 5.0 being x86 only) 
+- linux-x86 only (due to OCaml 5.0 being x86 only)
+- Use unix blocking IO for now (will be replaced by [eio](https://github.com/ocaml-multicore/eio) in the future)
 
 # Non Goals
 - Compatibility with lwt/async
