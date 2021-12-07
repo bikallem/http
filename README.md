@@ -5,6 +5,9 @@ Below is the screenshot displaying all cores being used while processing request
 
 ![image](https://user-images.githubusercontent.com/315907/143028630-65dc149a-2afc-49fd-9b73-b82885d1d995.png)
 
+# Todo
+- HTTP chunked encoding support.
+
 # Goals/Considerations
 - Able to be used as a HTTP server in resto (https://gitlab.com/nomadic-labs/resto)
 - Utilize all cores/CPUs by exploiting OCaml 5.0 features - specifically `Domains` and `effects`.
