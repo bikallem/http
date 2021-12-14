@@ -9,7 +9,6 @@ Below is the screenshot displaying all cores being used while processing request
 - HTTP chunked encoding support.
 
 # Goals/Considerations
-- Able to be used as a HTTP server in resto (https://gitlab.com/nomadic-labs/resto)
 - Utilize all cores/CPUs by exploiting OCaml 5.0 features - specifically `Domains` and `effects`.
 - Prefer direct style api over monadic api.
 - Easy experimentation with various threading models - such as domainslib, eio or some other new mechanisms.
