@@ -535,7 +535,6 @@ let cpu_count () =
     1
 
 let start ?(domains = cpu_count ()) ~port request_handler =
-  (* TODO num_additional_domains needs to be greater than 1 it seems. *)
   let task_pool = Task.setup_pool ~num_additional_domains:(domains - 1) () in
   let listen_address = Unix.(ADDR_INET (inet_addr_loopback, port)) in
   let server_sock = Unix.(socket PF_INET SOCK_STREAM 0) in
