@@ -546,6 +546,5 @@ let start ?(domains = cpu_count ()) ~port request_handler =
   while true do
     let fd, client_addr = accept_non_intr server_sock in
     (fun () -> handle_client_connection (client_addr, fd) request_handler)
-    |> Task.async task_pool
-    |> ignore
+    |> Task.async task_pool |> ignore
   done
