@@ -9,6 +9,8 @@ let create fd =
 let write_string t s = Chan.send t.buf s
 
 let rec run t =
+  Printf.printf "\nWriter.run%!";
+
   match Chan.recv t.buf with
   | s ->
       let b = Bytes.of_string s in

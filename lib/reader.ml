@@ -55,7 +55,9 @@ let fill t to_read =
   let off = t.off + t.len in
   let len = trailing_space t in
   let buf = Cstruct.of_bigarray ~off ~len t.buf in
-  let got = ExtUnix.All.BA.single_read t.source buf.buffer in
+  Printf.printf "\nread%!";
+
+  let got = ExtUnix.All.BA.read t.source buf.buffer in
   t.len <- t.len + got;
   got
 

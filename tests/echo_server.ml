@@ -1,12 +1,15 @@
+open Dhttp
+
 let () =
-  Http.start ~port:3000 (fun request ->
-      let body =
-        match Http.body request with
-        | Some b -> Cstruct.to_string b
-        | None -> ""
-      in
-      let buf = Buffer.create 0 in
-      let fmt = Format.formatter_of_buffer buf in
-      Http.pp_request fmt request;
-      Format.fprintf fmt "\n\n%s" body;
-      Http.response (Buffer.contents buf))
+  Server.start ~port:8080 (fun req ->
+      match Request.resource req with
+      | "/" ->
+          let body =
+            match Request.read_fixed req with Ok s -> s | Error _ -> ""
+          in
+          let buf = Buffer.create 0 in
+          let fmt = Format.formatter_of_buffer buf in
+          Request.pp fmt req;
+          Format.fprintf fmt "\n\n%s" body;
+          Response.text (Buffer.contents buf)
+      | _ -> Response.not_found)

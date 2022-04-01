@@ -247,3 +247,16 @@ let read_chunk t =
   | _ -> fun _ -> Error "Request is not a chunked request"
 
 let set_read_complete t = t.read_complete <- true
+let pp_method fmt meth = Format.fprintf fmt "%s" (Http.Method.to_string meth)
+let pp_version fmt v = Format.fprintf fmt "%s" (Http.Version.to_string v)
+
+let pp fmt t =
+  let fields =
+    [
+      Fmt.field "meth" (fun t -> t.meth) pp_method;
+      Fmt.field "resource" (fun t -> t.resource) Fmt.string;
+      Fmt.field "version" (fun t -> t.version) pp_version;
+      Fmt.field "headers" (fun t -> t.headers) Http.Header.pp_hum;
+    ]
+  in
+  Fmt.record fields fmt t

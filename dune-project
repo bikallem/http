@@ -25,7 +25,6 @@
   (ocaml
    (>= 4.12+domains))
   fmt
-  angstrom
   domainslib
   http-cookie
   cstruct
