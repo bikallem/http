@@ -1,4 +1,12 @@
 (library
- (name http)
- (public_name http)
- (libraries fmt angstrom domainslib extunix http-cookie bigstringaf cstruct))
+ (name dhttp)
+ (public_name dhttp)
+ (libraries
+  fmt
+  angstrom
+  domainslib
+  extunix
+  http-cookie
+  bigstringaf
+  http
+  cstruct))
